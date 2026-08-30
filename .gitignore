@@ -1,0 +1,24 @@
+# Environment & Secrets
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+*.db
+backend/*.db
+
+# Logs & Temp
+*.log
+scratch/
+.system_generated/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
