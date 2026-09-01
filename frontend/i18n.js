@@ -64,8 +64,7 @@ class MultilingualController {
       'voiceDeckLangSelector',
       'floatingVoiceLangSelector',
       'sidebarWebsiteLangSelector',
-      'portalLangSelector',
-      'portalLangSelectorHeader'
+      'portalLangSelector'
     ];
 
     selectorIds.forEach(id => {
@@ -125,8 +124,7 @@ class MultilingualController {
       'voiceDeckLangSelector',
       'floatingVoiceLangSelector',
       'sidebarWebsiteLangSelector',
-      'portalLangSelector',
-      'portalLangSelectorHeader'
+      'portalLangSelector'
     ];
     selectorIds.forEach(id => {
       const sel = document.getElementById(id);

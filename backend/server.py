@@ -163,7 +163,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Saral Setu Backend API",
-    description="MongoDB Auth, Profile Vault, Form Storage, Translation & Gemini AI Server",
+    description="Secure Cloud Auth, Citizen Profile Vault, Form Storage, Translation & Gemini AI Server",
     version="3.1.0",
     lifespan=lifespan
 )

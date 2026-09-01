@@ -2358,6 +2358,7 @@ body {
   margin-left: 4px;
 }
 
+.secure-vault-badge,
 .mongo-status-badge {
   display: inline-flex;
   align-items: center;
@@ -2371,6 +2372,7 @@ body {
   border: 1px solid rgba(42, 107, 44, 0.2);
 }
 
+.secure-status-dot,
 .mongo-status-dot {
   width: 7px;
   height: 7px;

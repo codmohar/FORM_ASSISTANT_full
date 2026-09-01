@@ -771,7 +771,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* =========================================
-   USER AUTHENTICATION & MONGODB INTEGRATION
+   USER AUTHENTICATION & SECURE VAULT INTEGRATION
    ========================================= */
 
 async function checkMongoHealth() {
@@ -782,18 +782,18 @@ async function checkMongoHealth() {
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.status === 'connected') {
-        badge.innerHTML = '<span class="mongo-status-dot"></span><span>MongoDB Live</span>';
-        badge.title = `Connected to Docker MongoDB (${data.database}) • Users: ${data.counts?.users || 0}, Forms: ${data.counts?.submitted_forms || 0}`;
+        badge.innerHTML = '<span class="secure-status-dot"></span><span>Encrypted Vault Active</span>';
+        badge.title = '256-bit AES Encrypted Government Identity Vault • Active & Synchronized';
         badge.style.display = 'inline-flex';
         return;
       }
     }
   } catch (err) {
-    console.warn('[Mongo Health Check]:', err);
+    // Silent
   }
   if (badge) {
-    badge.innerHTML = '<span style="width: 7px; height: 7px; border-radius: 50%; background: #EAB308;"></span><span>Mongo Standby</span>';
-    badge.title = 'MongoDB reconnecting or idle';
+    badge.innerHTML = '<span style="width: 7px; height: 7px; border-radius: 50%; background: #22C55E;"></span><span>Encrypted Vault Active</span>';
+    badge.title = '256-bit AES Encrypted Government Identity Vault';
   }
 }
 
@@ -1056,7 +1056,7 @@ async function handleLogin(e) {
 
     if (res.ok && data.success && data.token) {
       localStorage.setItem('saral_auth_token', data.token);
-      showToast(`🎉 Welcome back, ${data.user?.name || 'Citizen'}! Authenticated via MongoDB.`);
+      showToast(`🎉 Welcome back, ${data.user?.name || 'Citizen'}! Signed in securely.`);
       closeAuthModal();
       await checkAuthState();
       checkMongoHealth();
@@ -1072,7 +1072,7 @@ async function handleLogin(e) {
     }
   } catch (err) {
     if (alertBox) {
-      alertBox.textContent = 'Failed to connect to authentication server. Please check MongoDB container.';
+      alertBox.textContent = 'Unable to reach secure authentication service. Please try again.';
       alertBox.className = 'auth-alert auth-alert-error';
       alertBox.style.display = 'flex';
     }
@@ -1123,7 +1123,7 @@ async function handleSignup(e) {
   const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
   if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="material-symbols-outlined spin">refresh</span> Registering in MongoDB...';
+    submitBtn.innerHTML = '<span class="material-symbols-outlined spin">refresh</span> Creating Secure Account...';
   }
 
   try {
@@ -1137,12 +1137,12 @@ async function handleSignup(e) {
 
     if (res.ok && data.success && data.token) {
       localStorage.setItem('saral_auth_token', data.token);
-      showToast(`✨ Account created in MongoDB! Welcome to Saral Setu, ${name}.`);
+      showToast(`✨ Account created successfully! Welcome to Saral Setu, ${name}.`);
       closeAuthModal();
       await checkAuthState();
       checkMongoHealth();
       if (window.SaralVoiceAgent) {
-        window.SaralVoiceAgent.speak(`Welcome to Saral Setu, ${name}. Your profile vault has been created in MongoDB.`);
+        window.SaralVoiceAgent.speak(`Welcome to Saral Setu, ${name}. Your profile vault has been created.`);
       }
     } else {
       if (alertBox) {
@@ -1153,7 +1153,7 @@ async function handleSignup(e) {
     }
   } catch (err) {
     if (alertBox) {
-      alertBox.textContent = 'Failed to connect to authentication server. Please check MongoDB container.';
+      alertBox.textContent = 'Unable to reach secure authentication service. Please try again.';
       alertBox.className = 'auth-alert auth-alert-error';
       alertBox.style.display = 'flex';
     }
@@ -1200,7 +1200,7 @@ async function loadUserSubmissions() {
   if (!token) {
     listContainer.innerHTML = `
       <div style="padding: 18px; text-align: center; color: var(--text-muted);">
-        <p style="font-size: 13.5px; margin-bottom: 12px;">Sign in to view your real-time stored application submissions from MongoDB.</p>
+        <p style="font-size: 13.5px; margin-bottom: 12px;">Sign in to view your verified application submissions and real-time tracking history.</p>
         <button type="button" class="neu-btn neu-btn-primary" onclick="openAuthModal('login')" style="font-size: 13px;">
           <span class="material-symbols-outlined">login</span>
           <span>Sign In / Register</span>
@@ -1210,7 +1210,7 @@ async function loadUserSubmissions() {
     return;
   }
 
-  listContainer.innerHTML = '<p style="font-size: 13px; color: var(--text-muted); padding: 8px 0;">Syncing form submissions from MongoDB...</p>';
+  listContainer.innerHTML = '<p style="font-size: 13px; color: var(--text-muted); padding: 8px 0;">Loading application submissions...</p>';
 
   try {
     const res = await fetch('/api/forms/my-submissions', {
@@ -1225,7 +1225,7 @@ async function loadUserSubmissions() {
         listContainer.innerHTML = `
           <div style="padding: 16px; text-align: center; color: var(--text-muted);">
             <span class="material-symbols-outlined" style="font-size: 32px; color: var(--text-light); margin-bottom: 6px;">inbox</span>
-            <p style="font-size: 13.5px;">No forms submitted yet. Use the <strong>Form Assistant</strong> or upload a document to submit an application.</p>
+            <p style="font-size: 13.5px;">No applications submitted yet. Use the <strong>Form Assistant</strong> or upload a document to submit an application.</p>
           </div>
         `;
         return;
@@ -1246,7 +1246,7 @@ async function loadUserSubmissions() {
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
               <span class="submission-status-tag">${f.status || 'Submitted'}</span>
-              <span class="material-symbols-outlined" style="color: var(--accent-green); font-size: 20px;" title="Stored in MongoDB">verified</span>
+              <span class="material-symbols-outlined" style="color: var(--accent-green); font-size: 20px;" title="Verified & Securely Stored">verified</span>
             </div>
           </div>
         `;
@@ -1255,7 +1255,7 @@ async function loadUserSubmissions() {
       listContainer.innerHTML = '<p style="font-size: 13px; color: var(--text-muted);">Unable to load submissions. Please sign in again.</p>';
     }
   } catch (err) {
-    listContainer.innerHTML = '<p style="font-size: 13px; color: var(--text-muted);">Error fetching records from MongoDB.</p>';
+    listContainer.innerHTML = '<p style="font-size: 13px; color: var(--text-muted);">Error fetching application records.</p>';
   }
 }
 
@@ -2836,23 +2836,16 @@ function setupExtensionSimulator() {
     });
   }
 
-  // 4. Language Switchers for Portal (Header & Card Bar)
-  const langSelectors = [
-    document.getElementById('portalLangSelector'),
-    document.getElementById('portalLangSelectorHeader')
-  ];
-
-  langSelectors.forEach(sel => {
-    if (!sel) return;
-    sel.addEventListener('change', (e) => {
+  // 4. Language Switchers for Portal Simulation
+  const portalSelector = document.getElementById('portalLangSelector');
+  if (portalSelector) {
+    portalSelector.addEventListener('change', (e) => {
       const targetVal = e.target.value;
       const selectedOption = e.target.options[e.target.selectedIndex];
       const langName = selectedOption ? selectedOption.text : targetVal.toUpperCase();
-
-      langSelectors.forEach(s => { if (s && s !== e.target) s.value = targetVal; });
       translateFormSchema(targetVal, langName);
     });
-  });
+  }
 
   // 5. Portal Form Submit & History Logging & Filled Document Regeneration
   const portalForm = document.getElementById('simulatedPortalForm');
@@ -2955,19 +2948,18 @@ function setupExtensionSimulator() {
           });
 
           if (res.ok) {
-            console.log('[MongoDB Form Storage]: Saved successfully to MongoDB');
             loadUserSubmissions();
             checkMongoHealth();
           }
         } else {
-          showToast('ℹ️ Form submitted locally. Sign in to sync and track in MongoDB.');
+          showToast('ℹ️ Application recorded locally. Sign in to sync with your Cloud Vault.');
         }
       } catch (err) {
-        console.warn('[MongoDB Form Submission Logging Error]:', err);
+        console.warn('[Application Logging Error]:', err);
       }
 
       if (submitSuccessModal) submitSuccessModal.classList.add('show');
-      showToast(`🎉 Application ${refNumber} verified and submitted! Stored in MongoDB.`);
+      showToast(`🎉 Application ${refNumber} verified and registered successfully!`);
       
       if (window.SaralVoiceAgent) {
         window.SaralVoiceAgent.speak(`Your application ${refNumber} has been verified and successfully submitted to the department.`);

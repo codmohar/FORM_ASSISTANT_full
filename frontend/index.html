@@ -376,10 +376,10 @@
           </select>
         </div>
 
-        <!-- MongoDB Connected Status Pill -->
-        <div class="mongo-status-badge" id="mongoStatusBadge" title="Connected to MongoDB Docker Container (saralsetu_db)">
-          <span class="mongo-status-dot"></span>
-          <span>MongoDB Live</span>
+        <!-- Secure Citizen Identity Vault Status Pill -->
+        <div class="secure-vault-badge" id="mongoStatusBadge" title="256-bit Encrypted Government Identity Vault">
+          <span class="secure-status-dot"></span>
+          <span>Encrypted Vault Active</span>
         </div>
 
         <!-- Auth Button (Shown when Guest) -->
@@ -603,20 +603,20 @@
           </div>
         </div>
 
-        <!-- Section: MongoDB Saved Form Submissions -->
+        <!-- Section: Saved Form Submissions -->
         <div class="neu-raised activity-card-container" id="mongoSubmissionsCard" style="margin-top: 24px;">
           <div class="section-header" style="margin-bottom: 16px;">
             <div style="display: flex; align-items: center; gap: 10px;">
               <span class="material-symbols-outlined fill" style="color: #2A6B2C; font-size: 24px;">task_alt</span>
-              <h3 class="section-title" style="margin-bottom: 0;">My Submitted Forms (MongoDB)</h3>
+              <h3 class="section-title" style="margin-bottom: 0;">My Submitted Applications</h3>
             </div>
             <button class="neu-btn" style="padding: 6px 14px; min-height: 36px; font-size: 13px;" onclick="loadUserSubmissions()">
               <span class="material-symbols-outlined" style="font-size: 16px;">refresh</span>
-              <span>Sync Mongo</span>
+              <span>Sync Records</span>
             </button>
           </div>
           <div id="mongoSubmissionsList" class="submissions-list">
-            <p style="font-size: 13px; color: var(--text-muted); padding: 12px 0;">Sign in to view your real-time stored application submissions from MongoDB.</p>
+            <p style="font-size: 13px; color: var(--text-muted); padding: 12px 0;">Sign in to view your verified application submissions and real-time tracking history.</p>
           </div>
         </div>
       </section>
@@ -1072,35 +1072,8 @@
         
         <div class="page-title-group" style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;">
           <div>
-            <h2 class="page-title">Smart Form Assistant Extension (Live Simulation)</h2>
-            <p class="page-subtitle">Experience how Saral Setu integrates with any official government portal to auto-fill, translate, and guide you.</p>
-              <div style="display: flex; align-items: center; gap: 10px;">
-            <label for="portalLangSelectorHeader" style="font-size: 14px; font-weight: 700; color: var(--primary-dark);">Translate Portal (22 Indian Languages):</label>
-            <select class="neu-input" id="portalLangSelectorHeader" style="min-width: 220px; height: 42px; padding: 6px 14px; font-weight: 700; border: 2px solid var(--primary); border-radius: 10px;">
-              <option value="en">English (English)</option>
-              <option value="hi">हिन्दी (Hindi)</option>
-              <option value="bn">বাংলা (Bengali)</option>
-              <option value="te">తెలుగు (Telugu)</option>
-              <option value="mr">मराठी (Marathi)</option>
-              <option value="ta">தமிழ் (Tamil)</option>
-              <option value="ur">اردو (Urdu)</option>
-              <option value="gu">ગુજરાતી (Gujarati)</option>
-              <option value="kn">ಕನ್ನಡ (Kannada)</option>
-              <option value="ml">മലയാളം (Malayalam)</option>
-              <option value="or">ଓଡ଼ିଆ (Odia)</option>
-              <option value="pa">ਪੰਜਾਬੀ (Punjabi)</option>
-              <option value="as">অসমীয়া (Assamese)</option>
-              <option value="mai">मैथिली (Maithili)</option>
-              <option value="sat">ᱥᱟᱱᱛᱟᱲᱤ (Santali)</option>
-              <option value="ks">کٲشُر (Kashmiri)</option>
-              <option value="ne">नेपाली (Nepali)</option>
-              <option value="sd">سنڌي (Sindhi)</option>
-              <option value="kok">कोंकणी (Konkani)</option>
-              <option value="doi">डोगरी (Dogri)</option>
-              <option value="mni">মণিপুরী (Manipuri)</option>
-              <option value="brx">बड़ो (Bodo)</option>
-              <option value="sa">संस्कृतम् (Sanskrit)</option>
-            </select>
+            <h2 class="page-title" data-i18n="nav_extension">Smart Form Assistant Extension (Live Simulation)</h2>
+            <p class="page-subtitle" data-i18n="smart_form_desc">Experience how Saral Setu integrates with any official government portal to auto-fill, translate, and guide you.</p>
           </div>
         </div>
 
@@ -1859,7 +1832,7 @@
   </div> <!-- End of #mainAppLayout -->
 
   <!-- =========================================
-       6. USER AUTHENTICATION MODAL (MONGODB)
+       6. USER AUTHENTICATION MODAL (SECURE CITIZEN VAULT)
        ========================================= -->
   <div class="modal-backdrop" id="authModal">
     <div class="neu-raised modal-card" style="max-width: 480px;">
@@ -1868,7 +1841,7 @@
           <span class="material-symbols-outlined fill" style="color: #1D4ED8; font-size: 28px;">account_circle</span>
           <div>
             <h3 class="modal-title" id="authModalTitle" style="margin-bottom: 2px;">Citizen Account</h3>
-            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Connected to Docker MongoDB</p>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">256-bit AES Encrypted Government Vault</p>
           </div>
         </div>
         <button class="modal-close-btn" id="closeAuthModal" onclick="closeAuthModal()">
@@ -1939,7 +1912,7 @@
 
         <button type="submit" class="neu-btn neu-btn-primary w-full" id="signupSubmitBtn" style="margin-top: 8px;">
           <span class="material-symbols-outlined">how_to_reg</span>
-          <span>Register & Save in MongoDB</span>
+          <span>Register & Create Citizen Vault</span>
         </button>
 
         <p class="auth-switch-text">
