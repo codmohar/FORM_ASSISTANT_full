@@ -29,21 +29,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Install Python requirements
+# Copy Python requirements
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy backend and frontend source code
+# Copy backend application and frontend web assets
 COPY backend /app/backend
 COPY frontend /app/frontend
-
-# Copy root static assets for full compatibility
-COPY app.js /app/
-COPY i18n.js /app/
-COPY style.css /app/
-COPY voice-assistant.js /app/
-COPY index.html /app/
 
 # Expose FastAPI application port
 EXPOSE 8000

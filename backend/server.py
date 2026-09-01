@@ -2229,8 +2229,16 @@ async def translate_document(req: DocTranslationRequest):
 
 # ─── Mount Frontend ──────────────────────────────────────────────────
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+if not os.path.exists(FRONTEND_DIR):
+    FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend")
+if not os.path.exists(FRONTEND_DIR):
+    FRONTEND_DIR = "/app/frontend"
+
 if os.path.exists(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    print(f"[OK] Serving frontend from: {FRONTEND_DIR}")
+else:
+    print(f"[Warning] Frontend directory not found: {FRONTEND_DIR}")
 
 if __name__ == "__main__":
     import uvicorn
