@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # ─── 1. Saral Setu Application (FastAPI + AI Engine + Frontend) ────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: saralsetu_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB_NAME=saralsetu_db
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.6-flash}
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+      - HF_IMAGE_TO_TEXT_MODEL=${HF_IMAGE_TO_TEXT_MODEL:-microsoft/trocr-base-printed}
+      - JWT_SECRET=${JWT_SECRET:-saralsetu_jwt_secret_key_2024_formeasya1_mvp}
+    env_file:
+      - path: backend/.env
+        required: false
+      - path: .env
+        required: false
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - saralsetu_network
+
+  # ─── 2. Encrypted Citizen Vault & Document Database (MongoDB) ──────────
+  mongodb:
+    image: mongo:7.0
+    container_name: saralsetu_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=saralsetu_db
+    volumes:
+      - saralsetu_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --eval 'db.adminCommand(\"ping\")' --quiet || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - saralsetu_network
+
+  # ─── 3. Database Administration Portal (Optional Web UI) ───────────────
+  mongo-express:
+    image: mongo-express:latest
+    container_name: saralsetu_db_admin
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ENABLE_ADMIN=true
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - saralsetu_network
+
+volumes:
+  saralsetu_mongo_data:
+    name: saralsetu_mongo_data
+
+networks:
+  saralsetu_network:
+    name: saralsetu_network
+    driver: bridge
