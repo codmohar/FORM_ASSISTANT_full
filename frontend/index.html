@@ -1203,6 +1203,11 @@
                     <span id="triggerAutofillBtnText">Auto-Fill from Vault</span>
                   </button>
 
+                  <button type="button" class="neu-btn" id="previewFilledDocToolbarBtn" style="font-size: 13px; font-weight: 700; color: var(--color-primary);">
+                    <span class="material-symbols-outlined" style="font-size: 18px;">description</span>
+                    <span>Preview Filled Form</span>
+                  </button>
+
                   <button type="button" class="neu-btn" id="clearPortalFormBtn" style="font-size: 13px;">
                     <span class="material-symbols-outlined" style="font-size: 18px;">restart_alt</span>
                     <span>Reset Form</span>
@@ -1703,13 +1708,13 @@
 
   <!-- 4. Application Submission Success Modal -->
   <div class="modal-backdrop" id="formSuccessModal">
-    <div class="neu-raised modal-card" style="text-align: center;">
+    <div class="neu-raised modal-card" style="text-align: center; max-width: 540px;">
       <div style="width: 64px; height: 64px; border-radius: 50%; background: var(--accent-green); color: #fff; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; box-shadow: var(--neu-extruded-sm);">
         <span class="material-symbols-outlined fill" style="font-size: 36px;">task_alt</span>
       </div>
       <h3 class="modal-title" style="margin-bottom: 8px;">Application Submitted Successfully!</h3>
       <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 20px;">
-        Your application has been verified against UIDAI and registered with the Department.
+        Your application has been verified against UIDAI records and stored securely in the database. The completed official document has been regenerated with all your filled details.
       </p>
       <div class="neu-sunken" style="padding: 16px; margin-bottom: 20px;">
         <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Application Reference Number</div>
@@ -1717,10 +1722,52 @@
           GOV-SS-894120
         </div>
       </div>
-      <div style="display: flex; gap: 12px; justify-content: center;">
-        <button class="neu-btn neu-btn-primary" id="closeSuccessModal">
-          <span>Done</span>
+      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <button type="button" class="neu-btn neu-btn-primary" id="viewFilledDocFromSuccessBtn" style="font-size: 13px; font-weight: 700;">
+          <span class="material-symbols-outlined" style="font-size: 18px;">visibility</span>
+          <span>View Filled Document</span>
         </button>
+        <a class="neu-btn neu-btn-secondary" id="downloadFilledPdfSuccessLink" href="#" target="_blank" style="font-size: 13px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+          <span class="material-symbols-outlined" style="font-size: 18px;">download</span>
+          <span>Download Official PDF</span>
+        </a>
+        <button class="neu-btn" id="closeSuccessModal" style="font-size: 13px;">
+          <span>Close</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4b. Regenerated Filled Government Document Preview Modal -->
+  <div class="modal-backdrop" id="filledDocPreviewModal">
+    <div class="neu-raised modal-card" style="max-width: 860px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; padding: 24px;">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="material-symbols-outlined fill" style="color: var(--color-primary); font-size: 28px;">article</span>
+          <div>
+            <h3 class="modal-title" id="previewDocModalTitle" style="font-size: 18px; margin: 0;">Official Filled Application Document</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;" id="previewDocModalSubtitle">Generated from uploaded reference form with all applicant particulars</p>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" class="neu-btn" id="printFilledDocBtn" style="padding: 6px 14px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+            <span class="material-symbols-outlined" style="font-size: 16px;">print</span>
+            <span>Print</span>
+          </button>
+          <a class="neu-btn neu-btn-primary" id="modalDownloadPdfLink" href="#" target="_blank" style="padding: 6px 14px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
+            <span class="material-symbols-outlined" style="font-size: 16px;">download</span>
+            <span>Download Official PDF</span>
+          </a>
+          <button class="modal-close-btn" id="closeFilledDocModal">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="filled-doc-sheet-container" id="filledDocSheetContainer" style="overflow-y: auto; flex: 1; padding: 16px; background: #3b4252; border-radius: 8px;">
+        <div class="filled-gov-doc-sheet" id="renderedFilledDocSheet">
+          <!-- Dynamically populated filled document sheet -->
+        </div>
       </div>
     </div>
   </div>

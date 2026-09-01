@@ -2854,10 +2854,47 @@ function setupExtensionSimulator() {
     });
   });
 
-  // 5. Portal Form Submit & History Logging
+  // 5. Portal Form Submit & History Logging & Filled Document Regeneration
   const portalForm = document.getElementById('simulatedPortalForm');
   const submitSuccessModal = document.getElementById('formSuccessModal');
   const closeSuccessModal = document.getElementById('closeSuccessModal');
+  const previewDocBtn = document.getElementById('previewFilledDocToolbarBtn');
+  const viewSuccessDocBtn = document.getElementById('viewFilledDocFromSuccessBtn');
+  const filledDocModal = document.getElementById('filledDocPreviewModal');
+  const closeFilledDocModal = document.getElementById('closeFilledDocModal');
+  const printFilledDocBtn = document.getElementById('printFilledDocBtn');
+
+  if (previewDocBtn) {
+    previewDocBtn.addEventListener('click', async () => {
+      showToast('⚡ Regenerating official filled form document...');
+      const genDoc = await generateFilledFormDocument();
+      if (genDoc) {
+        openFilledDocPreviewModal(genDoc);
+      }
+    });
+  }
+
+  if (viewSuccessDocBtn) {
+    viewSuccessDocBtn.addEventListener('click', () => {
+      if (appState.lastGeneratedDoc) {
+        openFilledDocPreviewModal(appState.lastGeneratedDoc);
+      } else {
+        generateFilledFormDocument().then(openFilledDocPreviewModal);
+      }
+    });
+  }
+
+  if (closeFilledDocModal && filledDocModal) {
+    closeFilledDocModal.addEventListener('click', () => {
+      filledDocModal.classList.remove('show');
+    });
+  }
+
+  if (printFilledDocBtn) {
+    printFilledDocBtn.addEventListener('click', () => {
+      window.print();
+    });
+  }
 
   if (portalForm) {
     portalForm.addEventListener('submit', async (e) => {
@@ -2881,9 +2918,23 @@ function setupExtensionSimulator() {
         }
       });
 
-      const formTitle = document.getElementById('labelPortalTitle')?.textContent || 'National Pension & Welfare Application';
+      const formTitle = document.getElementById('labelPortalTitle')?.textContent || appState.currentFormSchema?.portal_title || 'National Pension & Welfare Application';
 
-      // Log and store form directly into MongoDB if authenticated
+      // 1. Generate Official Filled Document PDF
+      try {
+        const genResult = await generateFilledFormDocument(refNumber);
+        if (genResult && genResult.pdf_download_url) {
+          const successDlLink = document.getElementById('downloadFilledPdfSuccessLink');
+          if (successDlLink) {
+            successDlLink.href = genResult.pdf_download_url;
+            successDlLink.style.display = 'inline-flex';
+          }
+        }
+      } catch (genErr) {
+        console.warn('[Doc Gen Error]:', genErr);
+      }
+
+      // 2. Log and store form directly into MongoDB if authenticated
       try {
         const token = localStorage.getItem('saral_auth_token');
         if (token) {
@@ -2909,7 +2960,6 @@ function setupExtensionSimulator() {
             checkMongoHealth();
           }
         } else {
-          // If guest, show option to register in toast
           showToast('ℹ️ Form submitted locally. Sign in to sync and track in MongoDB.');
         }
       } catch (err) {
@@ -3387,4 +3437,182 @@ function showToast(message) {
     toast.style.transition = 'all 0.3s ease';
     setTimeout(() => toast.remove(), 300);
   }, 3200);
+}
+
+/* =========================================
+   7. REGENERATED FILLED DOCUMENT ENGINE
+   ========================================= */
+
+async function generateFilledFormDocument(customRefNumber) {
+  const portalForm = document.getElementById('simulatedPortalForm');
+  const refNumber = customRefNumber || 'GOV-SS-' + Math.floor(100000 + Math.random() * 900000);
+  
+  // Capture current form snapshot
+  const inputs = portalForm ? portalForm.querySelectorAll('.portal-input') : [];
+  const snapshot = {};
+  inputs.forEach(inp => {
+    if (inp.id) {
+      const label = inp.previousElementSibling?.textContent?.replace('*', '').trim() || inp.id;
+      snapshot[inp.id] = {
+        label: label,
+        value: inp.value || '',
+        vaultKey: inp.getAttribute('data-vault-key') || ''
+      };
+    }
+  });
+
+  const formTitle = document.getElementById('labelPortalTitle')?.textContent || appState.currentFormSchema?.portal_title || 'Official Citizen Welfare Application Form';
+  const orgName = appState.currentFormSchema?.organization || 'Department of Social Welfare & Citizen Empowerment';
+  
+  let userName = 'Citizen Applicant';
+  for (const k in snapshot) {
+    if (k.toLowerCase().includes('name') || (snapshot[k].vaultKey || '').toLowerCase().includes('name')) {
+      if (snapshot[k].value) {
+        userName = snapshot[k].value;
+        break;
+      }
+    }
+  }
+
+  const token = localStorage.getItem('saral_auth_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  try {
+    const res = await fetch('/api/forms/generate-filled-doc', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        form_title: formTitle,
+        organization: orgName,
+        ref_number: refNumber,
+        doc_id: appState.documents[appState.currentDocIndex]?.id || '',
+        fields_snapshot: snapshot,
+        user_name: userName
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        appState.lastGeneratedDoc = data;
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('[Generate Filled Doc Error]:', err);
+  }
+
+  // Fallback visual document representation
+  const fallbackDoc = {
+    success: true,
+    gen_id: 'local_' + Date.now(),
+    ref_number: refNumber,
+    form_title: formTitle,
+    organization: orgName,
+    user_name: userName,
+    formatted_date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    fields_snapshot: snapshot
+  };
+  appState.lastGeneratedDoc = fallbackDoc;
+  return fallbackDoc;
+}
+
+function renderFilledDocVisualSheet(genResult) {
+  const container = document.getElementById('renderedFilledDocSheet');
+  if (!container) return;
+
+  const refNo = genResult.ref_number || 'GOV-SS-849102';
+  const dateStr = genResult.formatted_date || new Date().toLocaleString();
+  const formTitle = genResult.form_title || 'OFFICIAL CITIZEN APPLICATION FORM';
+  const orgName = genResult.organization || 'DEPARTMENT OF SOCIAL WELFARE & CITIZEN EMPOWERMENT';
+  const userName = genResult.user_name || 'Citizen Applicant';
+
+  const snapshot = genResult.fields_snapshot || {};
+  let fieldsHtml = '';
+  
+  for (const [key, item] of Object.entries(snapshot)) {
+    const label = (typeof item === 'object' && item.label) ? item.label : key;
+    const value = (typeof item === 'object' && item.value) ? item.value : (item || '—');
+    fieldsHtml += `
+      <tr>
+        <td class="filled-field-label-cell">${escapeHtml(label)}</td>
+        <td class="filled-field-value-cell">${escapeHtml(value || '—')}</td>
+      </tr>
+    `;
+  }
+
+  container.innerHTML = `
+    <div class="filled-gov-header">
+      <div class="gov-emblem-text">GOVERNMENT OF INDIA</div>
+      <div class="gov-dept-name">${escapeHtml(orgName)}</div>
+      <div class="gov-doc-title">${escapeHtml(formTitle)}</div>
+      <div class="gov-doc-tagline">Official Application Form Regenerated from Reference Document via Saral Setu</div>
+    </div>
+
+    <div class="filled-meta-grid">
+      <div class="filled-meta-item">
+        <span class="filled-meta-label">Application Ref Number</span>
+        <span class="filled-meta-val" style="color: var(--color-primary, #1a73e8);">${escapeHtml(refNo)}</span>
+      </div>
+      <div class="filled-meta-item">
+        <span class="filled-meta-label">Submission Date & Time</span>
+        <span class="filled-meta-val">${escapeHtml(dateStr)}</span>
+      </div>
+      <div class="filled-meta-item">
+        <span class="filled-meta-label">Verification Status</span>
+        <span class="filled-meta-val" style="color: #16a34a;">DIGITALLY VERIFIED & AUTHENTICATED</span>
+      </div>
+      <div class="filled-meta-item">
+        <span class="filled-meta-label">Filing Method</span>
+        <span class="filled-meta-val">Aadhaar Vault 1-Click Verification</span>
+      </div>
+    </div>
+
+    <div class="filled-doc-section-title">PARTICULARS OF APPLICANT (FILLED FROM REFERENCE FORM)</div>
+    <table class="filled-fields-table">
+      <tbody>
+        ${fieldsHtml || '<tr><td colspan="2" style="text-align: center; color: #64748b;">No fields provided.</td></tr>'}
+      </tbody>
+    </table>
+
+    <div class="filled-declaration-box">
+      <strong>Applicant Declaration:</strong> I hereby declare that all particulars stated above are true, complete, and accurate to the best of my knowledge and belief. I authorize the Department to verify these particulars with official government records via UIDAI / DigiLocker.
+    </div>
+
+    <div class="filled-seal-signature-grid">
+      <div class="official-verification-seal">
+        <div style="font-size: 11px; font-weight: 800;">[✓] SARAL SETU DIGITAL VERIFICATION SEAL</div>
+        <div style="font-size: 10px; margin-top: 3px;">Validated against Citizen Profile Vault & Aadhaar</div>
+        <div style="font-size: 9px; opacity: 0.8; margin-top: 2px;">Dispatch Security Hash: SHA256-${refNo.slice(-6)}X99A</div>
+      </div>
+      <div class="official-signature-box">
+        <div style="font-size: 10px; font-weight: 700; color: #64748b;">Digitally Signed By</div>
+        <div style="font-size: 13px; font-weight: 800; color: #0b1f3a; margin-top: 2px;">${escapeHtml(userName)}</div>
+        <div style="font-size: 9.5px; color: #16a34a; margin-top: 2px;">Verified Electronic Signature</div>
+      </div>
+    </div>
+  `;
+}
+
+function openFilledDocPreviewModal(genResult) {
+  if (!genResult) return;
+  renderFilledDocVisualSheet(genResult);
+  const modal = document.getElementById('filledDocPreviewModal');
+  const dlLink = document.getElementById('modalDownloadPdfLink');
+  const modalTitle = document.getElementById('previewDocModalTitle');
+  
+  if (modalTitle && genResult.form_title) {
+    modalTitle.textContent = genResult.form_title;
+  }
+
+  if (dlLink) {
+    if (genResult.pdf_download_url) {
+      dlLink.href = genResult.pdf_download_url;
+      dlLink.style.display = 'inline-flex';
+    } else {
+      dlLink.style.display = 'none';
+    }
+  }
+  if (modal) modal.classList.add('show');
 }

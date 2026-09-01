@@ -16,11 +16,12 @@ from contextlib import asynccontextmanager
 
 import io
 import re
+import base64
 import requests
 from fastapi import FastAPI, HTTPException, Request, Depends, Header, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 
@@ -43,6 +44,15 @@ try:
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
+
+try:
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, KeepTogether
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    HAS_REPORTLAB = True
+except ImportError:
+    HAS_REPORTLAB = False
 
 # ─── Load environment ───────────────────────────────────────────────
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
@@ -122,7 +132,7 @@ async def init_db():
         await mongo_client.admin.command('ping')
         print(f"[OK] Connected to MongoDB ({MONGO_DB_NAME}) at {MONGO_URI}")
 
-        # Ensure indexes for users, profiles, submitted_forms, and history
+        # Ensure indexes for users, profiles, submitted_forms, history, user_documents, and generated_documents
         await db.users.create_index("email", unique=True)
         await db.users.create_index("id", unique=True)
         await db.profiles.create_index("user_id", unique=True)
@@ -130,6 +140,13 @@ async def init_db():
         await db.submitted_forms.create_index("submitted_at")
         await db.history.create_index("user_id")
         await db.history.create_index("timestamp")
+        await db.user_documents.create_index("user_id")
+        await db.user_documents.create_index("id", unique=True)
+        await db.user_documents.create_index("created_at")
+        await db.generated_documents.create_index("user_id")
+        await db.generated_documents.create_index("id", unique=True)
+        await db.generated_documents.create_index("ref_number")
+        await db.generated_documents.create_index("created_at")
         print("[OK] MongoDB indexes verified successfully.")
     except Exception as e:
         print(f"[Warning] MongoDB connection failed: {e}. Running with lazy reconnection.")
@@ -246,6 +263,15 @@ class VoicePlanRequest(BaseModel):
     domContext: Optional[Dict[str, Any]] = None
     availableActions: Optional[List[Dict[str, Any]]] = None
 
+class GenerateFilledDocRequest(BaseModel):
+    form_title: Optional[str] = "Official Application Form"
+    organization: Optional[str] = "Ministry of Social Justice & Empowerment"
+    ref_number: Optional[str] = None
+    doc_id: Optional[str] = None
+    fields_snapshot: Dict[str, Any] = {}
+    pages_data: Optional[List[Dict[str, Any]]] = None
+    user_name: Optional[str] = "Citizen Applicant"
+
 class DocumentChatRequest(BaseModel):
     question: str
     docTitle: Optional[str] = None
@@ -284,6 +310,22 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
         return {"id": user_id, "email": email}
     except JWTError:
         raise HTTPException(status_code=401, detail="Token expired or invalid")
+
+async def get_current_user_optional(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+    """Extract JWT if present, else return guest user context."""
+    if not authorization:
+        return {"id": "guest_user", "email": "guest@saralsetu.gov.in", "name": "Guest Citizen", "is_guest": True}
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() == "bearer" and token:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get("sub")
+            email = payload.get("email")
+            if user_id:
+                return {"id": user_id, "email": email, "is_guest": False}
+        except Exception:
+            pass
+    return {"id": "guest_user", "email": "guest@saralsetu.gov.in", "name": "Guest Citizen", "is_guest": True}
 
 # ═══════════════════════════════════════════════════════════════════════
 #  MONGODB HEALTH CHECK ENDPOINT
@@ -546,6 +588,351 @@ async def get_my_submissions(current_user: Dict = Depends(get_current_user), lim
         "limit": limit,
         "offset": offset
     }
+
+# ═══════════════════════════════════════════════════════════════════════
+#  PDF GENERATION & USER DOCUMENT STORAGE ENGINE
+# ═══════════════════════════════════════════════════════════════════════
+
+def generate_filled_pdf_bytes(
+    form_title: str,
+    org_name: str,
+    ref_no: str,
+    fields_snapshot: Dict[str, Any],
+    user_name: str = "Citizen Applicant",
+    submission_date: str = ""
+) -> bytes:
+    """Generates an official, high-fidelity government application PDF with filled user information."""
+    if not HAS_REPORTLAB:
+        return b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj xref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n178\n%%EOF"
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36
+    )
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        'GovTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=15,
+        leading=18,
+        textColor=colors.HexColor('#0B1F3A'),
+        alignment=1
+    )
+    subtitle_style = ParagraphStyle(
+        'GovSubtitle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10,
+        leading=13,
+        textColor=colors.HexColor('#475569'),
+        alignment=1
+    )
+    sec_heading_style = ParagraphStyle(
+        'SecHeading',
+        parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor('#1E3A8A')
+    )
+    label_style = ParagraphStyle(
+        'FieldLabel',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor('#475569')
+    )
+    val_style = ParagraphStyle(
+        'FieldValue',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9.5,
+        leading=12,
+        textColor=colors.HexColor('#0F172A')
+    )
+    stamp_style = ParagraphStyle(
+        'StampStyle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor('#15803D'),
+        alignment=1
+    )
+
+    elements = []
+
+    # 1. Header Banner
+    elements.append(Paragraph("GOVERNMENT OF INDIA", ParagraphStyle('GovIndia', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=12, textColor=colors.HexColor('#EA580C'), alignment=1)))
+    elements.append(Spacer(1, 4))
+    elements.append(Paragraph(org_name.upper() if org_name else "MINISTRY OF SOCIAL JUSTICE & CITIZEN EMPOWERMENT", subtitle_style))
+    elements.append(Spacer(1, 6))
+    elements.append(Paragraph(form_title if form_title else "OFFICIAL CITIZEN WELFARE APPLICATION FORM", title_style))
+    elements.append(Spacer(1, 4))
+    elements.append(Paragraph("Verified and Processed via Saral Setu Smart Form Assistant Portal", subtitle_style))
+    elements.append(Spacer(1, 8))
+    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0B1F3A'), spaceBefore=2, spaceAfter=8))
+
+    # 2. Reference & Metadata Table
+    meta_data = [
+        [
+            Paragraph(f"<b>Application Reference No:</b> <font color='#0B1F3A'>{ref_no}</font>", label_style),
+            Paragraph(f"<b>Submission Date:</b> {submission_date or datetime.now().strftime('%d %B %Y, %I:%M %p')}", label_style)
+        ],
+        [
+            Paragraph("<b>Verification Status:</b> <font color='#16A34A'>DIGITALLY VERIFIED & AUTHENTICATED</font>", label_style),
+            Paragraph("<b>Filing Mode:</b> 1-Click Vault Auto-Fill (Direct)", label_style)
+        ]
+    ]
+    meta_table = Table(meta_data, colWidths=[260, 260])
+    meta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#CBD5E1')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('RIGHTPADDING', (0,0), (-1,-1), 8),
+    ]))
+    elements.append(meta_table)
+    elements.append(Spacer(1, 10))
+
+    # 3. Process fields from snapshot
+    processed_fields = []
+    for k, v in fields_snapshot.items():
+        if isinstance(v, dict):
+            lbl = v.get('label') or k
+            val = v.get('value') or '—'
+            vk = v.get('vaultKey') or ''
+        else:
+            lbl = str(k).replace('portal', '').replace('_', ' ').title()
+            val = str(v) or '—'
+            vk = ''
+        processed_fields.append({'key': k, 'label': lbl, 'value': val, 'vaultKey': vk})
+
+    # Divide fields into pairs for clean 2-column tabular layout
+    field_rows = []
+    for i in range(0, len(processed_fields), 2):
+        f1 = processed_fields[i]
+        col1 = [
+            Paragraph(f1['label'], label_style),
+            Spacer(1, 1),
+            Paragraph(f"{f1['value'] if f1['value'] else '—'}", val_style)
+        ]
+        if i + 1 < len(processed_fields):
+            f2 = processed_fields[i + 1]
+            col2 = [
+                Paragraph(f2['label'], label_style),
+                Spacer(1, 1),
+                Paragraph(f"{f2['value'] if f2['value'] else '—'}", val_style)
+            ]
+        else:
+            col2 = [Paragraph("", label_style), Paragraph("", val_style)]
+        field_rows.append([col1, col2])
+
+    if field_rows:
+        elements.append(Paragraph("PARTICULARS OF THE APPLICANT (FILLED FROM REFERENCE FORM)", sec_heading_style))
+        elements.append(Spacer(1, 4))
+        fields_table = Table(field_rows, colWidths=[260, 260])
+        fields_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FFFFFF')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#CBD5E1')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+        elements.append(fields_table)
+        elements.append(Spacer(1, 10))
+
+    # 4. Declarations & Digital Attestation
+    dec_text = (
+        "<b>Applicant Declaration:</b> I hereby declare that all particulars stated above are true, "
+        "complete, and accurate to the best of my knowledge and belief. I authorize the Department to verify "
+        "these particulars with official government records via UIDAI / DigiLocker."
+    )
+    elements.append(Paragraph(dec_text, ParagraphStyle('DecText', parent=styles['Normal'], fontName='Helvetica', fontSize=7.5, leading=10, textColor=colors.HexColor('#64748B'))))
+    elements.append(Spacer(1, 8))
+
+    # 5. Stamp & Signature Table
+    stamp_data = [
+        [
+            Paragraph("<b>OFFICIAL VERIFICATION ATTESTATION</b><br/>"
+                      "[✓] SARAL SETU DIGITAL VERIFICATION SEAL<br/>"
+                      "Validated against Aadhaar & Citizen Profile Vault<br/>"
+                      f"Dispatch Hash: SHA256-{ref_no[-6:]}X99A", stamp_style),
+            Paragraph(f"<b>Digitally Signed By:</b><br/>"
+                      f"<b>{user_name}</b><br/>"
+                      f"Date: {submission_date or datetime.now().strftime('%d/%m/%Y')}<br/>"
+                      f"<font color='#16A34A'>Verified via Vault</font>", ParagraphStyle('SignStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10, alignment=1))
+        ]
+    ]
+    stamp_table = Table(stamp_data, colWidths=[280, 240])
+    stamp_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (0,0), colors.HexColor('#DCFCE7')),
+        ('BACKGROUND', (1,0), (1,0), colors.HexColor('#F1F5F9')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#94A3B8')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    elements.append(stamp_table)
+
+    doc.build(elements)
+    return buffer.getvalue()
+
+@app.post("/api/forms/generate-filled-doc")
+async def generate_filled_form_document(
+    req: GenerateFilledDocRequest,
+    current_user: Dict = Depends(get_current_user_optional)
+):
+    """
+    Regenerates the complete official application document based on the reference form
+    uploaded earlier, populating all information provided by the user in the interactive form section.
+    Produces a downloadable official PDF and visual document preview.
+    """
+    global db
+    gen_id = f"gen_{uuid.uuid4().hex[:12]}"
+    ref_no = req.ref_number or f"GOV-SS-{random.randint(100000, 999999)}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    date_str = datetime.now().strftime("%d %B %Y, %I:%M %p IST")
+
+    user_name = req.user_name or "Citizen Applicant"
+    for k, v in req.fields_snapshot.items():
+        if isinstance(v, dict) and ('name' in k.lower() or 'name' in (v.get('vaultKey') or '').lower()):
+            if v.get('value'):
+                user_name = v['value']
+                break
+
+    # Generate PDF Bytes
+    pdf_bytes = generate_filled_pdf_bytes(
+        form_title=req.form_title or "Official Application Form",
+        org_name=req.organization or "Ministry of Social Justice & Empowerment",
+        ref_no=ref_no,
+        fields_snapshot=req.fields_snapshot,
+        user_name=user_name,
+        submission_date=date_str
+    )
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    gen_doc = {
+        "id": gen_id,
+        "user_id": current_user["id"],
+        "ref_number": ref_no,
+        "form_title": req.form_title or "Official Application Form",
+        "organization": req.organization or "Ministry of Social Justice & Empowerment",
+        "doc_id": req.doc_id,
+        "fields_count": len(req.fields_snapshot),
+        "fields_snapshot": req.fields_snapshot,
+        "user_name": user_name,
+        "pdf_base64": pdf_b64,
+        "pdf_size": len(pdf_bytes),
+        "created_at": now_iso,
+        "formatted_date": date_str
+    }
+
+    if db is not None:
+        try:
+            await db.generated_documents.insert_one(gen_doc)
+        except Exception as e:
+            print(f"[MongoDB Generated Doc Save Error]: {e}")
+
+    return {
+        "success": True,
+        "gen_id": gen_id,
+        "ref_number": ref_no,
+        "form_title": gen_doc["form_title"],
+        "organization": gen_doc["organization"],
+        "user_name": user_name,
+        "pdf_download_url": f"/api/forms/download-pdf/{gen_id}",
+        "pdf_base64": pdf_b64,
+        "formatted_date": date_str,
+        "fields_snapshot": req.fields_snapshot
+    }
+
+@app.get("/api/forms/download-pdf/{gen_id}")
+async def download_generated_pdf(gen_id: str):
+    """Downloads the generated filled PDF directly."""
+    global db
+    if db is None:
+        raise HTTPException(status_code=404, detail="Database not available")
+    record = await db.generated_documents.find_one({"id": gen_id})
+    if not record or not record.get("pdf_base64"):
+        raise HTTPException(status_code=404, detail="Generated document not found")
+    
+    pdf_bytes = base64.b64decode(record["pdf_base64"])
+    clean_filename = re.sub(r'[^a-zA-Z0-9_\-]', '_', record.get("form_title", "Filled_Form"))
+    filename = f"{clean_filename}_{record.get('ref_number', 'Application')}.pdf"
+    
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.get("/api/forms/my-generated-docs")
+async def get_my_generated_docs(current_user: Dict = Depends(get_current_user_optional), limit: int = 20):
+    """List all generated filled forms for the current user."""
+    global db
+    if db is None:
+        return {"success": True, "documents": []}
+    cursor = db.generated_documents.find({"user_id": current_user["id"]}).sort("created_at", -1).limit(limit)
+    items = []
+    async for doc in cursor:
+        doc.pop("_id", None)
+        doc.pop("pdf_base64", None)
+        items.append(doc)
+    return {"success": True, "documents": items}
+
+@app.get("/api/documents/my-documents")
+async def get_my_uploaded_documents(current_user: Dict = Depends(get_current_user_optional), limit: int = 50, offset: int = 0):
+    """Retrieve all uploaded documents and reference forms for the user from MongoDB."""
+    global db
+    user_id = current_user["id"]
+    if db is None:
+        return {"success": True, "documents": [], "total": 0}
+    cursor = db.user_documents.find({"user_id": user_id}).sort("created_at", -1).skip(offset).limit(limit)
+    items = []
+    async for doc in cursor:
+        doc.pop("_id", None)
+        doc.pop("file_base64", None)
+        items.append(doc)
+    total = await db.user_documents.count_documents({"user_id": user_id})
+    return {"success": True, "documents": items, "total": total}
+
+@app.get("/api/documents/{doc_id}")
+async def get_single_document(doc_id: str, current_user: Dict = Depends(get_current_user_optional)):
+    """Retrieve a single uploaded document with its extracted schema."""
+    global db
+    if db is None:
+        raise HTTPException(status_code=404, detail="Database not connected")
+    doc = await db.user_documents.find_one({"id": doc_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    doc.pop("_id", None)
+    return {"success": True, "doc": doc}
+
+@app.delete("/api/documents/{doc_id}")
+async def delete_document(doc_id: str, current_user: Dict = Depends(get_current_user)):
+    """Delete an uploaded document."""
+    global db
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    res = await db.user_documents.delete_one({"id": doc_id, "user_id": current_user["id"]})
+    return {"success": True, "deleted_count": res.deleted_count}
 
 # ═══════════════════════════════════════════════════════════════════════
 #  HISTORY & ACTIVITY TRACKING (MONGODB)
@@ -1072,11 +1459,15 @@ async def image_to_text(file: UploadFile = File(...)):
     }
 
 @app.post("/api/ai/analyze-doc")
-async def analyze_document(file: UploadFile = File(...)):
+async def analyze_document(
+    file: UploadFile = File(...),
+    current_user: Dict = Depends(get_current_user_optional)
+):
     """
     Unified Real-Time Document Analyzer:
     - Parses PDF (via pypdf) or Images (via Hugging Face OCR / Gemini Vision).
     - Generates plain-language takeaways, deadlines, and natural spoken summary.
+    - Stores the document and schema in MongoDB under the individual user account.
     """
     filename = file.filename or "Uploaded_Document.pdf"
     ext = filename.lower().split('.')[-1] if '.' in filename else ""
@@ -1127,8 +1518,13 @@ async def analyze_document(file: UploadFile = File(...)):
     # 4. Generate AI Takeaways, Summary & Spoken Script
     analysis = generate_document_summary_and_speech(extracted_text, filename)
 
+    doc_id = f"doc_{int(time.time()*1000)}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    file_b64 = base64.b64encode(contents).decode("utf-8") if len(contents) < 15 * 1024 * 1024 else ""
+
     doc_obj = {
-        "id": f"doc_{int(time.time()*1000)}",
+        "id": doc_id,
+        "user_id": current_user["id"],
         "title": analysis.get("title") or re.sub(r'[\-_]', ' ', filename.rsplit('.', 1)[0]).title(),
         "filename": filename,
         "dept": analysis.get("dept") or "Ministry of Social Justice & Empowerment",
@@ -1138,8 +1534,18 @@ async def analyze_document(file: UploadFile = File(...)):
         "summary_speech": analysis.get("summary_speech") or f"I have analyzed {filename}. It requires your Aadhaar and bank details to complete the application.",
         "extracted_fields": analysis.get("extracted_fields") or {},
         "fullText": extracted_text,
-        "ocr_source": ocr_source
+        "ocr_source": ocr_source,
+        "created_at": now_iso
     }
+
+    # Store individually in MongoDB for the user
+    if db is not None:
+        try:
+            db_record = dict(doc_obj)
+            db_record["file_base64"] = file_b64
+            await db.user_documents.insert_one(db_record)
+        except Exception as e:
+            print(f"[MongoDB User Document Save Error]: {e}")
 
     return {
         "success": True,
@@ -1632,11 +2038,14 @@ async def translate_form_schema_endpoint(req: FormTranslateRequest):
         return {"success": True, "form": schema, "target_lang": target_lang}
 
 @app.post("/api/ai/analyze-form")
-async def analyze_form_upload(file: UploadFile = File(...)):
+async def analyze_form_upload(
+    file: UploadFile = File(...),
+    current_user: Dict = Depends(get_current_user_optional)
+):
     """
     Analyzes an uploaded Form PDF or Scanned Form Image,
     extracts form fields, labels, portal metadata, and returns dynamic schema
-    for the live website simulation.
+    for the live website simulation. Saves/updates schema in user's MongoDB record.
     """
     filename = file.filename or "Uploaded_Form.pdf"
     ext = filename.lower().split('.')[-1] if '.' in filename else ""
@@ -1677,6 +2086,17 @@ async def analyze_form_upload(file: UploadFile = File(...)):
     form_schema["filename"] = filename
     form_schema["ocr_source"] = ocr_source
     form_schema["extracted_text_preview"] = extracted_text[:500]
+
+    # Associate form schema with user's document in MongoDB
+    if db is not None:
+        try:
+            await db.user_documents.update_one(
+                {"user_id": current_user["id"], "filename": filename},
+                {"$set": {"form_schema": form_schema, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                upsert=False
+            )
+        except Exception as e:
+            print(f"[MongoDB Form Schema Attach Error]: {e}")
 
     return {
         "success": True,
