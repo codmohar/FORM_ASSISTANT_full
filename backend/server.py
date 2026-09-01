@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # Auth libraries
-from passlib.context import CryptContext
+import bcrypt
 from jose import jwt, JWTError
 
 # PDF and Image Processing
@@ -168,14 +168,27 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# ─── CORS ────────────────────────────────────────────────────────────
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ─── Health Checks ───────────────────────────────────────────────────
+@app.get("/api/health")
+@app.get("/api/health/vault")
+async def health_check():
+    """Health check endpoint for Docker container and frontend vault monitoring."""
+    db_status = "healthy"
+    try:
+        if mongo_client:
+            await mongo_client.admin.command('ping')
+        else:
+            db_status = "unconnected"
+    except Exception as e:
+        db_status = f"degraded: {str(e)}"
+
+    return {
+        "status": "healthy",
+        "service": "Saral Setu Identity Vault & AI Engine",
+        "vault_status": db_status,
+        "database": MONGO_DB_NAME
+    }
+
 
 @app.middleware("http")
 async def add_no_cache_headers(request: Request, call_next):
